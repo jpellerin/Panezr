@@ -1,10 +1,6 @@
 import sublime
 import sublime_plugin
 
-DEFAULTS = {
-    'tabs': 5
-}
-
 
 class PaneTabListener(sublime_plugin.EventListener):
     def __init__(self, *args, **kwargs):
@@ -36,33 +32,26 @@ class PaneTabListener(sublime_plugin.EventListener):
     def close_overflow(self, last):
         aw = sublime.active_window()
         ag = aw.active_group()
-        av = aw.active_view_in_group(ag)
         w, _ = last.viewport_extent()
-        maxtabs = w // 80  # XXX setting
+        maxtabs = int(w // 80)  # XXX setting
 
-        print("close overflow", aw, ag, av)
-        print("maxtabs", maxtabs)
+        if not self.views.diff(aw, ag):
+            return
 
         def inner():
-            # last = None # aw.active_view()
             if self.working:
                 return
             self.working = True
-
             for view in self.iter_closeable(aw, ag, maxtabs):
-                #if view.id() == last.id():
-                #    continue
                 print("close", view.file_name())
                 view.close()
-            #if last:
-            #    aw.focus_view(last)
             self.working = False
         sublime.set_timeout(inner, 200)
 
     def iter_closeable(self, aw, ag, maxtabs):
         views = aw.views_in_group(ag)
         print("views open", len(views))
-        if len(views) <= maxtabs:
+        if len(views) <= maxtabs or not maxtabs:
             return
         vids = set([v.id() for v in views])
         candidates = [view for view in self.views
@@ -86,20 +75,39 @@ class Views(object):
         self.window = window
         self._ids = set()
         self._order = []
+        self._wids = {}
 
     def __iter__(self):
         return iter(self._order)
+
+    def record_counts(self, view):
+        wv = view.window()
+        gp, _ = wv.get_view_index(view)
+        if gp:
+            self._wids.setdefault(wv.id(), {})[gp] = len(
+                wv.views_in_group(gp))
 
     def remove(self, view):
         if view.id() in self._ids:
             self._order.remove(view)
             self._ids.remove(view.id())
+        self.record_counts(view)
 
     def add(self, view):
         if view.id() in self._ids:
             return
         self._ids.add(view.id())
         self._order.append(view)
+        self.record_counts(view)
+
+    def diff(self, aw, gp):
+        vig = len(aw.views_in_group(gp))
+        last = self._wids.get(aw.id(), {}).get(gp, None)
+        print("tabs: %s last: %s" % (vig, last))
+        self._wids.setdefault(aw.id(), {})[gp] = vig
+        if last is None:
+            return False
+        return vig > last
 
     def promote(self, view):
         self.remove(view)
