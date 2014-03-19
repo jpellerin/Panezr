@@ -18,13 +18,14 @@ class PaneTabListener(sublime_plugin.EventListener):
                     self.views.add(view)
 
     def on_close(self, view):
-        print("pre close", view.file_name())
         self.views.remove(view)
 
     def on_activated(self, view):
-        print("activated", view.file_name())
+        isnew = self.views.isnew(view)
         self.views.promote(view)
-        self.close_overflow(view)
+        # maybe just do a 'new' check -- is this view new?
+        if isnew:
+            self.close_overflow(view)
 
     def on_modified_async(self, view):
         self.views.promote(view)
@@ -35,28 +36,23 @@ class PaneTabListener(sublime_plugin.EventListener):
         w, _ = last.viewport_extent()
         maxtabs = int(w // 80)  # XXX setting
 
-        if not self.views.diff(aw, ag):
-            return
-
         def inner():
             if self.working:
                 return
             self.working = True
             for view in self.iter_closeable(aw, ag, maxtabs):
-                print("close", view.file_name())
+                self.views.remove(view)
                 view.close()
             self.working = False
         sublime.set_timeout(inner, 200)
 
     def iter_closeable(self, aw, ag, maxtabs):
         views = aw.views_in_group(ag)
-        print("views open", len(views))
         if len(views) <= maxtabs or not maxtabs:
             return
         vids = set([v.id() for v in views])
         candidates = [view for view in self.views
                       if self.closeable(view) and view.id() in vids]
-        print("closeable views", len(candidates))
         while len(candidates) > maxtabs:
             yield candidates.pop(0)
 
@@ -80,34 +76,19 @@ class Views(object):
     def __iter__(self):
         return iter(self._order)
 
-    def record_counts(self, view):
-        wv = view.window()
-        gp, _ = wv.get_view_index(view)
-        if gp:
-            self._wids.setdefault(wv.id(), {})[gp] = len(
-                wv.views_in_group(gp))
+    def isnew(self, view):
+        return view.id() not in self._ids
 
     def remove(self, view):
         if view.id() in self._ids:
             self._order.remove(view)
             self._ids.remove(view.id())
-        self.record_counts(view)
 
     def add(self, view):
         if view.id() in self._ids:
             return
         self._ids.add(view.id())
         self._order.append(view)
-        self.record_counts(view)
-
-    def diff(self, aw, gp):
-        vig = len(aw.views_in_group(gp))
-        last = self._wids.get(aw.id(), {}).get(gp, None)
-        print("tabs: %s last: %s" % (vig, last))
-        self._wids.setdefault(aw.id(), {})[gp] = vig
-        if last is None:
-            return False
-        return vig > last
 
     def promote(self, view):
         self.remove(view)
