@@ -34,7 +34,9 @@ class PaneTabListener(sublime_plugin.EventListener):
         aw = sublime.active_window()
         ag = aw.active_group()
         w, _ = last.viewport_extent()
-        maxtabs = int(w // 80)  # XXX setting
+        mintabwidth = aw.active_view().settings().get(
+            'panezr', {}).get('min_tab_width', 80)
+        maxtabs = int(w // mintabwidth)
 
         def inner():
             if self.working:
